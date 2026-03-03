@@ -10,7 +10,7 @@ primeira = df.head(1)[0].value
 ultima = df.tail(1)[0] .value
 
 df = df.filter(
-    (F.col('value') != F.lit(primeira)) & 
+    (F.col('value') != F.lit(primeira)) &
     (F.col('value') != F.lit(ultima))
 )
 

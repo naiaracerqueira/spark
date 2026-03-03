@@ -36,4 +36,4 @@ df = df.withColumn('data', F.coalesce(df.Atua, df.Cria)) \
        .withColumn('anomes', F.date_format(F.col('data'), 'yyyyMM')) \
        .withColumn('ano', F.date_format(F.col('data'), 'yyyy')) \
        .drop('data')
-df.show()                                                                                            
+df.show()
