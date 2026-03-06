@@ -5,8 +5,8 @@ from pyspark.sql import functions as F
 spark = SparkSession.builder.appName("ExemploVendas").getOrCreate()
 
 # Carregar dados de um arquivo CSV de vendas
-caminho_arquivo_vendas = "teste_csv_normal.csv"
-dados_vendas = spark.read.csv(caminho_arquivo_vendas, header=True, inferSchema=True)
+caminho_arquivo_vendas = "spark/teste_csv_normal.csv"
+dados_vendas = spark.read.csv(caminho_arquivo_vendas, header=True, inferSchema=True, sep=";")
 
 # Mostrar os primeiros registros para verificar se os dados foram carregados corretamente
 dados_vendas.show()
