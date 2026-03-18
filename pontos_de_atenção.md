@@ -13,7 +13,7 @@ Na prática isso significa:
 • Encadear várias transformações não custa nada — elas viram um único plano otimizado
 • O custo real só aparece na action
 
-### 2) SHUFFLE
+### 2) Shuffle
 
 Nem toda transformação no Spark custa igual: um filter(), select(), map() lê a partição, aplica a transformação e pronto. Cada partição trabalha sozinha. Sem depender das outras. Sem conversa entre executores. Isso é uma **𝗻𝗮𝗿𝗿𝗼𝘄 𝘁𝗿𝗮𝗻𝘀𝗳𝗼𝗿𝗺𝗮𝘁𝗶𝗼𝗻**, são baratos, paralelizáveis, rápidos.
 
@@ -27,4 +27,12 @@ O **𝘀𝗵𝘂𝗳𝗳𝗹𝗲** ocorre quando o Spark precisa redistribuir da
 
 Antes de sair rodando qualquer transformação, é vital avaliar se aquela operação custosa é realmente necessária para o seu resultado final. Muitas vezes, um filtro aplicado mais cedo, remover um distinct desnecessário ou uma mudança na estratégia de particionamento pode evitar esse caos de leitura e escrita em disco.
 
+𝗤𝘂𝗮𝗻𝗱𝗼 𝗼 𝘀𝗵𝘂𝗳𝗳𝗹𝗲 𝘃𝗶𝗿𝗮 𝗽𝗿𝗼𝗯𝗹𝗲𝗺𝗮 𝗱𝗲 𝘃𝗲𝗿𝗱𝗮𝗱𝗲:
+• Shuffles desnecessários: distinct() onde não precisa, groupBy() em chaves de alta cardinalidade sem necessidade
+• Shuffle sem controle de tamanho de partição: gera milhares de partições pequenas ou poucas partições gigantes
+• Shuffle em dados desbalanceados: uma chave concentra 80% dos dados, um executor afoga enquanto os outros ficam ociosos (data skew)
 
+𝗤𝘂𝗮𝗻𝗱𝗼 𝗱𝗮 𝗽𝗿𝗮 𝗲𝘃𝗶𝘁𝗮𝗿:
+• Broadcast join quando uma das tabelas é pequena: o Spark manda a tabela inteira pra cada executor, sem mover a tabela grande
+• Filtrar antes do join: menos dados pra redistribuir
+• Usar o mesmo particionamento ao longo do pipeline
