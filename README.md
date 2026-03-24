@@ -21,7 +21,7 @@ Obs: o broadcast join é a exceção interessante: é um join sem shuffle. O Spa
 
 Quanto você tem groupBy, orderBy, distinct, join, repartition e window functions, o Spark precisa juntar dados de partições diferentes para agregar, ou seja, mover dados entre executores pela rede. Isso é uma *𝘄𝗶𝗱𝗲 𝘁𝗿𝗮𝗻𝘀𝗳𝗼𝗿𝗺𝗮𝘁𝗶𝗼𝗻* e gera *𝘀𝗵𝘂𝗳𝗳𝗹𝗲*.
 
-Vale notar que o distinct e o window function surpreendem muita gente pois parecem operações simples, mas internamente fazem shuffle. O distinct é basicamente um groupBy em todas as colunas, e o window function precisa reagrupar os dados pela coluna do PARTITION BY.
+Obs: Vale notar que o distinct e o window function surpreendem muita gente pois parecem operações simples, mas internamente fazem shuffle. O distinct é basicamente um groupBy em todas as colunas, e o window function precisa reagrupar os dados pela coluna do PARTITION BY.
 
 O *𝘀𝗵𝘂𝗳𝗳𝗹𝗲* ocorre quando o Spark precisa redistribuir dados entre os nós do cluster. Para garantir que linhas com a mesma chave terminem no mesmo nó físico, o Spark realiza uma transferência intensa de dados pela rede. O shuffle exige etapas extremamente custosas para o hardware:
 - Shuffle Write: Cada executor precisa escrever dados no disco para que outros possam lê-los.
@@ -43,9 +43,13 @@ Antes de sair rodando qualquer transformação, é vital avaliar se aquela opera
 
 ## 3) Skewness
 
-O shuffle acontece quando você faz groupBy, join, orderBy (operações que precisam reagrupar dados entre executors). Sem shuffle, não tem skew — os dados ficam distribuídos como vieram da leitura, cada executor processa seu pedaço independentemente e ninguém precisa se comunicar com ninguém. Quando o Spark faz um shuffle, ele divide os dados em N pedaços / partições.
+*Sem shuffle, não tem skew*
 
-Nesse momento o Spark usa hash partitioning: pega a chave da operação, aplica um hash, e o resultado do hash determina em qual partição o registro vai. Cada executor pega uma partição por vez (por core disponível) e processa. Então se você tem 10 executors com 4 cores cada, você consegue processar 40 partições em paralelo simultaneamente. O *skewness* acontece quando os dados não estão distribuídos uniformemente entre as partições. Algumas tarefas ficam com muito mais dados que outras, causando um "stragglers problem" (a maioria dos executors termina rápido, mas um ou dois ficam travados processando partições enormes).
+O shuffle pode acontecer durante a leitura de dados inerentemente desbalanceados: não tem operação "errada" aqui — os dados simplesmente são assim. Quando o Spark lê dados do S3 (ou HDFS), ele cria uma partição por arquivo ou por bloco. Se os arquivos têm tamanhos muito diferentes, as partições já nascem desbalanceadas — antes de qualquer operação.
+
+![Dados](./imagem/tamanhos_arquivos.png)
+
+Agora, durante o processamento, o shuffle acontece quando você faz operações que precisam reagrupar dados entre executors. Nesse momento o Spark usa hash partitioning: pega a chave da operação, aplica um hash, e o resultado do hash determina em qual partição o registro vai. Cada executor pega uma partição por vez (por core disponível) e processa. Então se você tem 10 executors com 4 cores cada, você consegue processar 40 partições em paralelo simultaneamente. O *skewness* acontece quando os dados não estão distribuídos uniformemente entre as partições. Algumas tarefas ficam com muito mais dados que outras, causando um "stragglers problem" (a maioria dos executors termina rápido, mas um ou dois ficam travados processando partições enormes).
 
 ![Skewness](./imagem/skewness.png)
 
@@ -56,7 +60,6 @@ Aqui o Spark fez exatamente o que deveria — todos os "Brasil" precisam estar n
 **Causas**
 - Joins com chaves muito populares: quando você faz um join, o Spark precisa colocar todas as linhas com a mesma chave na mesma partição para conseguir cruzar os dados. Se uma chave aparece milhões de vezes, aquela partição fica enorme.
 - GroupBy em colunas de baixa cardinalidade: cardinalidade é o número de valores distintos de uma coluna. Uma coluna de baixa cardinalidade tem poucos valores possíveis — status com valores ativo/inativo, país com 5 opções, categoria com 10 valores. O problema é matemático: se você tem 200 partições mas apenas 5 valores distintos, no máximo 5 partições vão ter dados. As outras 195 ficam vazias. E das 5 que têm dados, a distribuição vai refletir a distribuição real dos valores — se 80% dos registros têm status = ativo, uma partição fica com 80% dos dados.
-- Dados inerentemente desbalanceados: esse é o skew que vem da natureza do negócio, não de uma operação específica. Não tem operação "errada" aqui — os dados simplesmente são assim: quando o Spark usa uma coluna muito desbalanceada como chave de shuffle. Exemplos: logs de um microserviço que recebe 100x mais tráfego que os outros, eventos de um usuário bot que gerou milhões de cliques, dados de uma cidade capital que concentra 70% da população de um país. Quando você lê esses dados e começa a processar, já entra no cluster desbalanceado.
 - Uso de collect() ou coalesce(1): Esses dois são diferentes dos anteriores — não causam skew nas partições distribuídas, mas causam um problema parecido: forçam todos os dados para um único ponto. collect() traz todos os dados do cluster para a memória do driver (a máquina que coordena o job). Se você fez isso no meio de um pipeline com um DataFrame grande, o driver pode explodir de memória — e mesmo que aguente, todo o paralelismo é perdido naquele momento. coalesce(1) reduz todas as partições para 1, forçando tudo para um único executor. É útil para gerar um único arquivo de saída, mas se usado cedo no pipeline, o resto do processamento roda em série num único core.
 
 **Como descobrir**
