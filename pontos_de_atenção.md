@@ -1,6 +1,6 @@
-## ATENÇÃO!
+# ATENÇÃO!
 
-### 1) Lazy Evaluation
+## 1) Lazy Evaluation
 
 O Spark não faz nada quando você manda ele fazer filter(), select(), groupBy().
 
@@ -13,7 +13,7 @@ Na prática isso significa:
 - Encadear várias transformações não custa nada — elas viram um único plano otimizado
 - O custo real só aparece na action
 
-### 2) Shuffle
+## 2) Shuffle
 
 Nem toda transformação no Spark custa igual: um filter(), select(), map() lê a partição, aplica a transformação e pronto. Cada partição trabalha sozinha. Sem depender das outras. Sem conversa entre executores. Isso é uma **𝗻𝗮𝗿𝗿𝗼𝘄 𝘁𝗿𝗮𝗻𝘀𝗳𝗼𝗿𝗺𝗮𝘁𝗶𝗼𝗻**, são baratos, paralelizáveis, rápidos.
 
@@ -37,7 +37,7 @@ Antes de sair rodando qualquer transformação, é vital avaliar se aquela opera
 - Filtrar antes do join: menos dados pra redistribuir
 - Usar o mesmo particionamento ao longo do pipeline
 
-### 3) Skewness
+## 3) Skewness
 
 Uma partição é uma fatia dos dados. Quando o Spark lê um arquivo ou faz um shuffle, ele divide os dados em N pedaços / partições. Lembrando que o shuffle acontece quando você faz groupBy, join, orderBy (operações que precisam reagrupar dados entre executors). Nesse momento o Spark usa hash partitioning: pega a chave da operação, aplica um hash, e o resultado do hash determina em qual partição o registro vai.
 
@@ -49,13 +49,14 @@ Aqui o Spark fez exatamente o que deveria — todos os "Brasil" precisam estar n
 
 ![Particionamento](./imagem/particionamento.png)
 
-**Causas**:
-- joins com chaves muito populares (ex: user_id = NULL ou um cliente gigante)
-- groupBy em colunas de baixa cardinalidade
-- dados inerentemente desbalanceados (ex: logs de um serviço específico dominam o volume)
-- uso de collect() ou coalesce(1) antes do tempo
+**Causas**
+- Joins com chaves muito populares: quando você faz um join, o Spark precisa colocar todas as linhas com a mesma chave na mesma partição para conseguir cruzar os dados. Se uma chave aparece milhões de vezes, aquela partição fica enorme.
+- GroupBy em colunas de baixa cardinalidade: cardinalidade é o número de valores distintos de uma coluna. Uma coluna de baixa cardinalidade tem poucos valores possíveis — status com valores ativo/inativo, país com 5 opções, categoria com 10 valores. O problema é matemático: se você tem 200 partições mas apenas 5 valores distintos, no máximo 5 partições vão ter dados. As outras 195 ficam vazias. E das 5 que têm dados, a distribuição vai refletir a distribuição real dos valores — se 80% dos registros têm status = ativo, uma partição fica com 80% dos dados.
+- Dados inerentemente desbalanceados: esse é o skew que vem da natureza do negócio, não de uma operação específica. Não tem operação "errada" aqui — os dados simplesmente são assim. Exemplos: logs de um microserviço que recebe 100x mais tráfego que os outros, eventos de um usuário bot que gerou milhões de cliques, dados de uma cidade capital que concentra 70% da população de um país. Quando você lê esses dados e começa a processar, já entra no cluster desbalanceado.
+- Uso de collect() ou coalesce(1): Esses dois são diferentes dos anteriores — não causam skew nas partições distribuídas, mas causam um problema parecido: forçam todos os dados para um único ponto. collect() traz todos os dados do cluster para a memória do driver (a máquina que coordena o job). Se você fez isso no meio de um pipeline com um DataFrame grande, o driver pode explodir de memória — e mesmo que aguente, todo o paralelismo é perdido naquele momento. coalesce(1) reduz todas as partições para 1, forçando tudo para um único executor. É útil para gerar um único arquivo de saída, mas se usado cedo no pipeline, o resto do processamento roda em série num único core.
 
 **Como descobrir**
+
 Você pode diagnosticar olhando as métricas do Spark UI ou programaticamente:
 ```
 from pyspark.sql import functions as F
