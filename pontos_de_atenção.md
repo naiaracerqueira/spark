@@ -9,9 +9,9 @@ Tudo só é executado quando você chama uma **𝗮𝗰𝘁𝗶𝗼𝗻** como c
 O Spark olha tudo que você escreveu e antes de executar, o Catalyst Optimizer analisa o plano inteiro e decide a melhor forma de rodar. Ele pode reordenar filtros, eliminar colunas desnecessárias, combinar operações. Tudo antes de mover um byte de dado. Se o Spark executasse cada linha imediatamente, como um Pandas, você perderia todas essas otimizações.
 
 Na prática isso significa:
-• Escrever .filter() antes do .join() não é obrigatório — o Catalyst já faz isso por você
-• Encadear várias transformações não custa nada — elas viram um único plano otimizado
-• O custo real só aparece na action
+- Escrever .filter() antes do .join() não é obrigatório — o Catalyst já faz isso por você
+- Encadear várias transformações não custa nada — elas viram um único plano otimizado
+- O custo real só aparece na action
 
 ### 2) Shuffle
 
@@ -27,12 +27,53 @@ O **𝘀𝗵𝘂𝗳𝗳𝗹𝗲** ocorre quando o Spark precisa redistribuir da
 
 Antes de sair rodando qualquer transformação, é vital avaliar se aquela operação custosa é realmente necessária para o seu resultado final. Muitas vezes, um filtro aplicado mais cedo, remover um distinct desnecessário ou uma mudança na estratégia de particionamento pode evitar esse caos de leitura e escrita em disco.
 
-𝗤𝘂𝗮𝗻𝗱𝗼 𝗼 𝘀𝗵𝘂𝗳𝗳𝗹𝗲 𝘃𝗶𝗿𝗮 𝗽𝗿𝗼𝗯𝗹𝗲𝗺𝗮 𝗱𝗲 𝘃𝗲𝗿𝗱𝗮𝗱𝗲:
-• Shuffles desnecessários: distinct() onde não precisa, groupBy() em chaves de alta cardinalidade sem necessidade
-• Shuffle sem controle de tamanho de partição: gera milhares de partições pequenas ou poucas partições gigantes
-• Shuffle em dados desbalanceados: uma chave concentra 80% dos dados, um executor afoga enquanto os outros ficam ociosos (data skew)
+**𝗤𝘂𝗮𝗻𝗱𝗼 𝗼 𝘀𝗵𝘂𝗳𝗳𝗹𝗲 𝘃𝗶𝗿𝗮 𝗽𝗿𝗼𝗯𝗹𝗲𝗺𝗮 𝗱𝗲 𝘃𝗲𝗿𝗱𝗮𝗱𝗲**:
+- Shuffles desnecessários: distinct() onde não precisa, groupBy() em chaves de alta cardinalidade sem necessidade
+- Shuffle sem controle de tamanho de partição: gera milhares de partições pequenas ou poucas partições gigantes
+- Shuffle em dados desbalanceados: uma chave concentra 80% dos dados, um executor afoga enquanto os outros ficam ociosos (data skew)
 
-𝗤𝘂𝗮𝗻𝗱𝗼 𝗱𝗮 𝗽𝗿𝗮 𝗲𝘃𝗶𝘁𝗮𝗿:
-• Broadcast join quando uma das tabelas é pequena: o Spark manda a tabela inteira pra cada executor, sem mover a tabela grande
-• Filtrar antes do join: menos dados pra redistribuir
-• Usar o mesmo particionamento ao longo do pipeline
+**𝗤𝘂𝗮𝗻𝗱𝗼 𝗱𝗮 𝗽𝗿𝗮 𝗲𝘃𝗶𝘁𝗮𝗿**:
+- Broadcast join quando uma das tabelas é pequena: o Spark manda a tabela inteira pra cada executor, sem mover a tabela grande
+- Filtrar antes do join: menos dados pra redistribuir
+- Usar o mesmo particionamento ao longo do pipeline
+
+### 3) Skewness
+
+O **skewness** acontece quando os dados não estão distribuídos uniformemente entre as partições. Algumas tarefas ficam com muito mais dados que outras, causando um "stragglers problem" (a maioria dos executors termina rápido, mas um ou dois ficam travados processando partições enormes).
+![Skewness](./imagem/skewness.png)
+
+**Causas**:
+- joins com chaves muito populares (ex: user_id = NULL ou um cliente gigante)
+- groupBy em colunas de baixa cardinalidade
+- dados inerentemente desbalanceados (ex: logs de um serviço específico dominam o volume)
+- uso de collect() ou coalesce(1) antes do tempo
+
+**Como resolver**
+- Adaptive Query Execution (AQE): o Spark rebalanceia as partições automaticamente em tempo de execução:
+```
+spark = SparkSession.builder \
+    .config("spark.sql.adaptive.enabled", "true") \
+    .config("spark.sql.adaptive.skewJoin.enabled", "true") \
+    .config("spark.sql.adaptive.skewJoin.skewedPartitionFactor", "5") \
+    .config("spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes", "256mb") \
+    .getOrCreate()
+```
+- Salting, para joins e groupBy: adiciona um número aleatório à chave para quebrar a partição gigante em N menores
+```
+import pyspark.sql.functions as F
+
+N = 10  # fator de salting
+
+# Tabela grande: adiciona salt aleatório
+df_large = df_large.withColumn("salt", (F.rand() * N).cast("int"))
+df_large = df_large.withColumn("salted_key", F.concat(F.col("join_key"), F.lit("_"), F.col("salt")))
+
+# Tabela pequena: explode com todos os valores de salt
+df_small = df_small.withColumn("salt", F.explode(F.array([F.lit(i) for i in range(N)])))
+df_small = df_small.withColumn("salted_key", F.concat(F.col("join_key"), F.lit("_"), F.col("salt")))
+
+result = df_large.join(df_small, "salted_key").drop("salt", "salted_key")
+```
+- Broadcast Join, quando uma tabela é pequena
+```spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "50mb")```
+
