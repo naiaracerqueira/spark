@@ -4,7 +4,7 @@
 
 O Spark não faz nada quando você manda ele fazer filter(), select(), groupBy().
 
-Tudo só é executado quando você chama uma **𝗮𝗰𝘁𝗶𝗼𝗻** como count(), show(), write().
+Tudo só é executado quando você chama uma *𝗮𝗰𝘁𝗶𝗼𝗻* como count(), show(), write().
 
 O Spark olha tudo que você escreveu e antes de executar, o Catalyst Optimizer analisa o plano inteiro e decide a melhor forma de rodar. Ele pode reordenar filtros, eliminar colunas desnecessárias, combinar operações. Tudo antes de mover um byte de dado. Se o Spark executasse cada linha imediatamente, como um Pandas, você perderia todas essas otimizações.
 
@@ -15,11 +15,11 @@ Na prática isso significa:
 
 ## 2) Shuffle
 
-Nem toda transformação no Spark custa igual: um filter(), select(), map() lê a partição, aplica a transformação e pronto. Cada partição trabalha sozinha. Sem depender das outras. Sem conversa entre executores. Isso é uma **𝗻𝗮𝗿𝗿𝗼𝘄 𝘁𝗿𝗮𝗻𝘀𝗳𝗼𝗿𝗺𝗮𝘁𝗶𝗼𝗻**, são baratos, paralelizáveis, rápidos.
+Nem toda transformação no Spark custa igual: um filter(), select(), map() lê a partição, aplica a transformação e pronto. Cada partição trabalha sozinha. Sem depender das outras. Sem conversa entre executores. Isso é uma *𝗻𝗮𝗿𝗿𝗼𝘄 𝘁𝗿𝗮𝗻𝘀𝗳𝗼𝗿𝗺𝗮𝘁𝗶𝗼𝗻*, são baratos, paralelizáveis, rápidos.
 
-Quanto você tem groupBy(), orderBy(), distinct() e join(). O Spark precisa juntar dados de partições diferentes para agregar, ou seja, mover dados entre executores pela rede. Isso é uma **𝘄𝗶𝗱𝗲 𝘁𝗿𝗮𝗻𝘀𝗳𝗼𝗿𝗺𝗮𝘁𝗶𝗼𝗻** e gera **𝘀𝗵𝘂𝗳𝗳𝗹𝗲**.
+Quanto você tem groupBy(), orderBy(), distinct() e join(). O Spark precisa juntar dados de partições diferentes para agregar, ou seja, mover dados entre executores pela rede. Isso é uma *𝘄𝗶𝗱𝗲 𝘁𝗿𝗮𝗻𝘀𝗳𝗼𝗿𝗺𝗮𝘁𝗶𝗼𝗻* e gera *𝘀𝗵𝘂𝗳𝗳𝗹𝗲*.
 
-O **𝘀𝗵𝘂𝗳𝗳𝗹𝗲** ocorre quando o Spark precisa redistribuir dados entre os nós do cluster. Para garantir que linhas com a mesma chave terminem no mesmo nó físico, o Spark realiza uma transferência intensa de dados pela rede. O shuffle exige etapas extremamente custosas para o hardware:
+O *𝘀𝗵𝘂𝗳𝗳𝗹𝗲* ocorre quando o Spark precisa redistribuir dados entre os nós do cluster. Para garantir que linhas com a mesma chave terminem no mesmo nó físico, o Spark realiza uma transferência intensa de dados pela rede. O shuffle exige etapas extremamente custosas para o hardware:
 - Shuffle Write: Cada executor precisa escrever dados no disco para que outros possam lê-los.
 - Shuffle Read: Os executores leem esses arquivos via rede.
 - Serialização: Os dados precisam ser transformados em um formato transferível, consumindo CPU.
@@ -41,7 +41,7 @@ Antes de sair rodando qualquer transformação, é vital avaliar se aquela opera
 
 O shuffle acontece quando você faz groupBy, join, orderBy (operações que precisam reagrupar dados entre executors). Sem shuffle, não tem skew — os dados ficam distribuídos como vieram da leitura, cada executor processa seu pedaço independentemente e ninguém precisa se comunicar com ninguém. Quando o Spark faz um shuffle, ele divide os dados em N pedaços / partições.
 
-Nesse momento o Spark usa hash partitioning: pega a chave da operação, aplica um hash, e o resultado do hash determina em qual partição o registro vai. Cada executor pega uma partição por vez (por core disponível) e processa. Então se você tem 10 executors com 4 cores cada, você consegue processar 40 partições em paralelo simultaneamente. O **skewness** acontece quando os dados não estão distribuídos uniformemente entre as partições. Algumas tarefas ficam com muito mais dados que outras, causando um "stragglers problem" (a maioria dos executors termina rápido, mas um ou dois ficam travados processando partições enormes).
+Nesse momento o Spark usa hash partitioning: pega a chave da operação, aplica um hash, e o resultado do hash determina em qual partição o registro vai. Cada executor pega uma partição por vez (por core disponível) e processa. Então se você tem 10 executors com 4 cores cada, você consegue processar 40 partições em paralelo simultaneamente. O *skewness* acontece quando os dados não estão distribuídos uniformemente entre as partições. Algumas tarefas ficam com muito mais dados que outras, causando um "stragglers problem" (a maioria dos executors termina rápido, mas um ou dois ficam travados processando partições enormes).
 
 ![Skewness](./imagem/skewness.png)
 
