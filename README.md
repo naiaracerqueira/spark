@@ -15,9 +15,13 @@ Na prática isso significa:
 
 ## 2) Shuffle
 
-Nem toda transformação no Spark custa igual: um filter(), select(), map() lê a partição, aplica a transformação e pronto. Cada partição trabalha sozinha. Sem depender das outras. Sem conversa entre executores. Isso é uma *𝗻𝗮𝗿𝗿𝗼𝘄 𝘁𝗿𝗮𝗻𝘀𝗳𝗼𝗿𝗺𝗮𝘁𝗶𝗼𝗻*, são baratos, paralelizáveis, rápidos.
+Nem toda transformação no Spark custa igual: um filter / where, select / withColumn, map / flatMap, limit / sample, union e broadcast join lê a partição, aplica a transformação e pronto. Cada partição trabalha sozinha. Sem depender das outras. Sem conversa entre executores. Isso é uma *𝗻𝗮𝗿𝗿𝗼𝘄 𝘁𝗿𝗮𝗻𝘀𝗳𝗼𝗿𝗺𝗮𝘁𝗶𝗼𝗻*, são baratos, paralelizáveis, rápidos.
 
-Quanto você tem groupBy(), orderBy(), distinct() e join(). O Spark precisa juntar dados de partições diferentes para agregar, ou seja, mover dados entre executores pela rede. Isso é uma *𝘄𝗶𝗱𝗲 𝘁𝗿𝗮𝗻𝘀𝗳𝗼𝗿𝗺𝗮𝘁𝗶𝗼𝗻* e gera *𝘀𝗵𝘂𝗳𝗳𝗹𝗲*.
+Obs: o broadcast join é a exceção interessante: é um join sem shuffle. O Spark copia a tabela menor inteira para todos os executors, então cada executor consegue fazer o join localmente com seu pedaço da tabela grande — sem precisar mover nenhum dado entre máquinas.
+
+Quanto você tem groupBy, orderBy, distinct, join, repartition e window functions, o Spark precisa juntar dados de partições diferentes para agregar, ou seja, mover dados entre executores pela rede. Isso é uma *𝘄𝗶𝗱𝗲 𝘁𝗿𝗮𝗻𝘀𝗳𝗼𝗿𝗺𝗮𝘁𝗶𝗼𝗻* e gera *𝘀𝗵𝘂𝗳𝗳𝗹𝗲*.
+
+Vale notar que o distinct e o window function surpreendem muita gente pois parecem operações simples, mas internamente fazem shuffle. O distinct é basicamente um groupBy em todas as colunas, e o window function precisa reagrupar os dados pela coluna do PARTITION BY.
 
 O *𝘀𝗵𝘂𝗳𝗳𝗹𝗲* ocorre quando o Spark precisa redistribuir dados entre os nós do cluster. Para garantir que linhas com a mesma chave terminem no mesmo nó físico, o Spark realiza uma transferência intensa de dados pela rede. O shuffle exige etapas extremamente custosas para o hardware:
 - Shuffle Write: Cada executor precisa escrever dados no disco para que outros possam lê-los.
