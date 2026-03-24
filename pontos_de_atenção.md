@@ -39,14 +39,29 @@ Antes de sair rodando qualquer transformação, é vital avaliar se aquela opera
 
 ### 3) Skewness
 
-O **skewness** acontece quando os dados não estão distribuídos uniformemente entre as partições. Algumas tarefas ficam com muito mais dados que outras, causando um "stragglers problem" (a maioria dos executors termina rápido, mas um ou dois ficam travados processando partições enormes).
+Uma partição é uma fatia dos dados. Quando o Spark lê um arquivo ou faz um shuffle, ele divide os dados em N pedaços / partições. Lembrando que o shuffle acontece quando você faz groupBy, join, orderBy (operações que precisam reagrupar dados entre executors). Nesse momento o Spark usa hash partitioning: pega a chave da operação, aplica um hash, e o resultado do hash determina em qual partição o registro vai.
+
+Cada executor pega uma partição por vez (por core disponível) e processa. Então se você tem 10 executors com 4 cores cada, você consegue processar 40 partições em paralelo simultaneamente. O **skewness** acontece quando os dados não estão distribuídos uniformemente entre as partições. Algumas tarefas ficam com muito mais dados que outras, causando um "stragglers problem" (a maioria dos executors termina rápido, mas um ou dois ficam travados processando partições enormes).
+
 ![Skewness](./imagem/skewness.png)
+
+Aqui o Spark fez exatamente o que deveria — todos os "Brasil" precisam estar na mesma partição para poder agregar. O problema é que "Brasil" tem 8 milhões de linhas e os outros países têm muito menos.
+
+![Particionamento](./imagem/particionamento.png)
 
 **Causas**:
 - joins com chaves muito populares (ex: user_id = NULL ou um cliente gigante)
 - groupBy em colunas de baixa cardinalidade
 - dados inerentemente desbalanceados (ex: logs de um serviço específico dominam o volume)
 - uso de collect() ou coalesce(1) antes do tempo
+
+**Como descobrir**
+Você pode diagnosticar olhando as métricas do Spark UI ou programaticamente:
+```
+from pyspark.sql import functions as F
+
+df.groupBy(F.spark_partition_id()).count().orderBy("count", ascending=False).show(20)
+```
 
 **Como resolver**
 - Adaptive Query Execution (AQE): o Spark rebalanceia as partições automaticamente em tempo de execução:
@@ -75,5 +90,28 @@ df_small = df_small.withColumn("salted_key", F.concat(F.col("join_key"), F.lit("
 result = df_large.join(df_small, "salted_key").drop("salt", "salted_key")
 ```
 - Broadcast Join, quando uma tabela é pequena
-```spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "50mb")```
+```
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "50mb")
+
+from pyspark.sql.functions import broadcast
+
+result = df_large.join(broadcast(df_small), "join_key")
+```
+- Reparticionamento manual, quando souber de antemão qual coluna tem skew
+```
+# Reparticiona por uma coluna mais uniforme
+df = df.repartition(200, "coluna_uniforme")
+
+# Ou use repartitionByRange para dados ordenáveis
+df = df.repartitionByRange(200, "data_coluna")
+```
+- Tratar valores nulos separadamente: chaves nulas tendem a colapsar numa única partição
+```
+df_nulls = df.filter(F.col("join_key").isNull())
+df_valid = df.filter(F.col("join_key").isNotNull())
+
+result_valid = df_valid.join(df_other, "join_key")
+# Processa nulos separadamente conforme a lógica de negócio
+result = result_valid.union(df_nulls)
+```
 
