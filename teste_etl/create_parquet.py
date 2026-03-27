@@ -2,13 +2,16 @@
 Gera um arquivo Parquet com a coluna coluna_json contendo
 o JSON cru que precisa ser explodido via from_json no Spark.
 """
-
+import os
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import json
 import random
 from datetime import datetime
+
+base_dir = os.path.dirname(__file__)
+print(f"Diretório base: {base_dir}")
 
 def gerar_json_raw(i):
     return json.dumps({
@@ -90,7 +93,7 @@ schema = pa.schema([
 ])
 
 table = pa.Table.from_pandas(df, schema=schema, preserve_index=False)
-pq.write_table(table, "python/teste_etl/dados_raw.parquet")
+pq.write_table(table, os.path.join(base_dir, "dados_raw.parquet"))
 
 print("Arquivo 'dados_raw.parquet' gerado com sucesso!")
 print(f"Linhas: {len(df)} | Colunas: {len(df.columns)}")

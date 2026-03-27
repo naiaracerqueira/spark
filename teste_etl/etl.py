@@ -1,12 +1,17 @@
+import os
 from pyspark.sql import functions as F
 from pyspark.sql.types import StringType, StructType, StructField, ArrayType, DoubleType
 from pyspark.sql import SparkSession
+
+
+base_dir = os.path.dirname(__file__)
+print(f"Diretório base: {base_dir}")
 
 spark = SparkSession.builder.appName("ReadParquet").getOrCreate()
 
 def read_file():
     try:
-        df = spark.read.parquet("python/teste_etl/dados_raw.parquet")
+        df = spark.read.parquet(os.path.join(base_dir, "dados_raw.parquet"))
         return df
     except Exception as e:
         print(f"Erro durante a leitura do arquivo: {e}")
@@ -113,7 +118,7 @@ def parse_date(col):
 
 def save_data(df):
     try:
-        df.write.parquet("python/teste_etl/silver", mode="overwrite")
+        df.write.parquet(os.path.join(base_dir, "silver"), mode="overwrite")
     except Exception as e:
         print(f"Erro durante a escrita: {e}")
         raise
